@@ -1,3 +1,7 @@
+// struct inodes deve armazenar toda a tabela de inodes, dai vc utiliza isso para impriomir no stats
+//
+
+
 #include <stdio.h>
 #include <assert.h>
 #include <fcntl.h>
@@ -19,6 +23,69 @@ struct ext2_group_desc *blockgroup;
 struct ext2_inode *inodes;
 struct ext2_dir_entry *dir;
 
+
+void printFileType(int filetype) {
+    switch (filetype) {
+        case EXT2_FT_UNKNOWN:
+            printf("Desconhecido\n");
+            break;
+        case EXT2_FT_REG_FILE:
+            printf("Arquivo Regular\n");
+            break;
+        case EXT2_FT_DIR:
+            printf("Diretório\n");
+            break;
+        case EXT2_FT_CHRDEV:
+            printf("Dispositivo de caractere\n");
+            break;
+        case EXT2_FT_BLKDEV:
+            printf("Dispositivo de bloco\n");
+            break;
+        case EXT2_FT_FIFO:
+            printf("FIFO (pipe)\n");
+            break;
+        case EXT2_FT_SOCK:
+            printf("Socket\n");
+            break;
+        case EXT2_FT_SYMLINK:
+            printf("Simbólico\n");
+            break;
+        default:
+            printf("[ERRO] Tipo de Arquivo não encontrado\n");
+            break;
+    }
+}
+
+
+void print_inode_info(int inode_index) {
+    if (!inodes) {
+        printf("A tabela de inodes não foi carregada.\n");
+        return;
+    }
+
+    struct ext2_inode *inode = &inodes[inode_index];
+
+    printf("Inode %d:\n", inode_index);
+    printf("  Modo: %u\n", inode->i_mode);
+    printf("  UID: %u\n", inode->i_uid);
+    printf("  Tamanho: %u bytes\n", inode->i_size);
+    printf("  Último acesso: %u\n", inode->i_atime);
+    printf("  Criação: %u\n", inode->i_ctime);
+    printf("  Modificação: %u\n", inode->i_mtime);
+    printf("  Exclusão: %u\n", inode->i_dtime);
+    printf("  Contagem de links: %u\n", inode->i_links_count);
+    printf("  Número de blocos: %u\n", inode->i_blocks);
+    
+    printf("  Blocos apontados: ");
+    for (int i = 0; i < EXT2_N_BLOCKS; i++) {
+        printf("%u ", inode->i_block[i]);
+    }
+    printf("\n");
+}
+
+
+
+
 int findInodeByName(int fd, int base_inode_num, char* filename, int *filetype) {
     struct ext2_inode inode;
     struct ext2_dir_entry entry;
@@ -36,11 +103,6 @@ int findInodeByName(int fd, int base_inode_num, char* filename, int *filetype) {
 
     if (read(fd, &inode, sizeof(struct ext2_inode)) != sizeof(struct ext2_inode)) {
         perror("[ERRO] Erro ao ler inode");
-        return -1;
-    }
-
-    if (!(inode.i_mode & 0x4000)) { // Verifica se é um diretório
-        printf("[ERRO] O inode informado não é um diretório.\n");
         return -1;
     }
 
@@ -85,8 +147,7 @@ int findInodeByName(int fd, int base_inode_num, char* filename, int *filetype) {
 
 
 
-#include <time.h>  // Para conversão de tempo
-
+/*
 int statFile(int fd, int base_inode_num, char* filename) {
     int filetype;
     int inode_num = findInodeByName(fd, base_inode_num, filename, &filetype);
@@ -100,7 +161,7 @@ int statFile(int fd, int base_inode_num, char* filename) {
     off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
     off_t inode_offset = inode_table_offset + (inode_num - 1) * sizeof(struct ext2_inode);
 
-    struct ext2_inode inode;
+    struct ext2_inode *inode;
     if (lseek(fd, inode_offset, SEEK_SET) == -1) {
         perror("[ERRO] Erro ao buscar inode");
         return -1;
@@ -112,9 +173,9 @@ int statFile(int fd, int base_inode_num, char* filename) {
     }
 
     // Convertendo tempos para formato legível
-    time_t ctime = inode.i_ctime;
-    time_t atime = inode.i_atime;
-    time_t mtime = inode.i_mtime;
+    time_t ctime = inode->i_ctime;
+    time_t atime = inode->i_atime;
+    time_t mtime = inode->i_mtime;
 
     char ctime_str[26], atime_str[26], mtime_str[26];
     ctime_r(&ctime, ctime_str);  // Converte tempo de criação
@@ -124,20 +185,20 @@ int statFile(int fd, int base_inode_num, char* filename) {
     // Exibindo os metadados do arquivo/diretório
     printf("Metadados do arquivo/diretório: %s\n", filename);
     printf("Inode: %d\n", inode_num);
-    printf("Tamanho: %u bytes\n", inode.i_size);
-    printf("Blocos: %u\n", inode.i_blocks);
-    printf("Links: %u\n", inode.i_links_count);
-    printf("UID do proprietário: %u\n", inode.i_uid);
-    printf("GID do grupo: %u\n", inode.i_gid);
+    printf("Tamanho: %u bytes\n", inode->i_size);
+    printf("Blocos: %u\n", inode->i_blocks);
+    printf("Links: %u\n", inode->i_links_count);
+    printf("UID do proprietário: %u\n", inode->i_uid);
+    printf("GID do grupo: %u\n", inode->i_gid);
     printf("Tempo de criação: %s", ctime_str);  // Inclui '\n' ao final
     printf("Último acesso: %s", atime_str);     // Inclui '\n' ao final
     printf("Última modificação: %s", mtime_str); // Inclui '\n' ao final
-    printf("Modo: 0x%x\n", inode.i_mode);
+    printf("Modo: 0x%x\n", inode->i_mode);
 
     // Verificando se é diretório ou arquivo regular
-    if (inode.i_mode & 0x4000) {
+    if (inode->i_mode & 0x4000) {
         printf("Tipo: Diretório\n");
-    } else if (inode.i_mode & 0x8000) {
+    } else if (inode->i_mode & 0x8000) {
         printf("Tipo: Arquivo regular\n");
     } else {
         printf("Tipo: Outro\n");
@@ -145,7 +206,61 @@ int statFile(int fd, int base_inode_num, char* filename) {
 
     return 0;  // Sucesso
 }
+*/
 
+int statFile(int fd, int base_inode_num, char* filename) {
+    if (!inodes) {
+        printf("[ERRO] A tabela de inodes não foi carregada.\n");
+        return -1;
+    }
+
+    int filetype;
+    int inode_num = findInodeByName(fd, base_inode_num, filename, &filetype);
+    printf("Inode_num stat: %d", inode_num);
+
+
+    if (inode_num == -1) {
+        printf("[ERRO] Arquivo ou diretório não encontrado: %s\n", filename);
+        return -1;
+    }
+
+    if (inode_num < 0 || inode_num >= superblock->s_inodes_per_group) {
+        printf("[ERRO] Número de inode inválido (%d).\n", inode_num);
+        return -1;
+    }
+
+    struct ext2_inode *inode = &inodes[inode_num];
+
+    // Renomeando a variável para evitar conflito com a função ctime()
+    time_t access_time = inode->i_atime;
+    time_t modify_time = inode->i_mtime;
+    time_t change_time = inode->i_ctime;
+
+    // Convertendo timestamps
+    char *atime_str = strtok(ctime(&access_time), "\n");
+    char *mtime_str = strtok(ctime(&modify_time), "\n");
+    char *ctime_str = strtok(ctime(&change_time), "\n");
+
+    printf("\n======= Metadados do Arquivo: %s =======\n", filename);
+    printFileType(filetype);
+    printf("Modo: %o\n", inode->i_mode);
+    printf("Número de links: %u\n", inode->i_links_count);
+    printf("UID do dono: %u\n", inode->i_uid);
+    printf("GID do grupo: %u\n", inode->i_gid);
+    printf("Tamanho: %u bytes\n", inode->i_size);
+    printf("Último acesso: %s\n", atime_str);
+    printf("Última modificação: %s\n", mtime_str);
+    printf("Última alteração nos metadados: %s\n", ctime_str);
+    printf("Blocos alocados: %u\n", inode->i_blocks);
+
+    printf("Blocos apontados: ");
+    for (int j = 0; j < EXT2_N_BLOCKS; j++) {
+        printf("%u ", inode->i_block[j]);
+    }
+    printf("\n");
+
+    return 0;
+}
 
 
 
@@ -230,7 +345,6 @@ void ls(int fd, int base_inode_num) {
     off_t offset;
     ssize_t bytes_read;
 
-
     // Localiza a tabela de inodes no grupo de blocos
     off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
 
@@ -246,13 +360,6 @@ void ls(int fd, int base_inode_num) {
     // Lê o inode do diretório base
     if (read(fd, &inode, sizeof(struct ext2_inode)) != sizeof(struct ext2_inode)) {
         perror("[ERRO] Erro ao ler inode");
-        return;
-    }
-
-
-    // O inode deve ser um diretório
-    if (!(inode.i_mode & 0x4000)) {
-        printf("[ERRO] O inode informado não é um diretório.\n");
         return;
     }
 
@@ -286,18 +393,28 @@ void ls(int fd, int base_inode_num) {
             }
             name[entry.name_len] = '\0';
 
-            printf("%d\t%s\n", entry.inode, name);
-            
+            // Verifica se a entrada é um diretório
+            if (entry.file_type == EXT2_FT_DIR) {
+                printf("%d\t%s/\n", entry.inode, name);
+            } else {
+                printf("%d\t%s\n", entry.inode, name);
+            }
+
             // Avança para a próxima entrada
             offset += entry.rec_len;
         }
     }
-
 }
 
 int cd(int fd, int base_inode_num, char *dirname) {
+    if (!inodes) {
+        printf("[ERRO] A tabela de inodes não foi carregada.\n");
+        return -1;
+    }
+
     int filetype;
     int inode_num = findInodeByName(fd, base_inode_num, dirname, &filetype);
+    printf("Inode_num cd: %d", inode_num);
 
     if (inode_num == -1) {
         printf("[ERRO] Diretório não encontrado: %s\n", dirname);
@@ -320,7 +437,7 @@ int cd(int fd, int base_inode_num, char *dirname) {
     }
 
     // Verificar se o inode representa um diretório
-    if (!(inode.i_mode & 0x4000)) {  // 0x4000 = diretório
+    if (filetype != EXT2_FT_DIR) {  
         printf("[ERRO] %s não é um diretório.\n", dirname);
         return -1;
     }
@@ -376,7 +493,7 @@ int extShell(int fd) {
         } else if (!strcmp(cmd, "sb")) {
             sb();  // Exibe informações do super bloco
         } else if (!strcmp(cmd, "ls")) {
-            ls(fd, EXT2_ROOT_INODE);  // Lista arquivos a partir do diretório raiz
+            ls(fd, current_directory_inode);  // Lista arquivos a partir do diretório raiz
         } else if (!strcmp(cmd, "stat")) {
             // Solicita o nome do arquivo/diretório a ser examinado
             printf("Digite o nome do arquivo ou diretório: ");
@@ -391,10 +508,6 @@ int extShell(int fd) {
         }
     }
 }
-
-
-
-
 
 
 

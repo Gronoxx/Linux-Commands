@@ -6,15 +6,15 @@
 #define EXT2_NAME_LEN 255
 #define EXT2_ROOT_INODE 3
 
-// Definições para tipos de arquivos no ext2
-#define REG            0  
-#define DIR      	   1  
-#define DES   		   2
-#define DIS_CAR  	   3  
-#define DIS_BLOCO      4  
-#define BUFFER         5  
-#define SOCKET         6  
-#define LINK_SIMBOLICO 7  
+#define EXT2_FT_UNKNOWN   0  //  Unknown File Type
+#define EXT2_FT_REG_FILE  1  //  Regular File
+#define EXT2_FT_DIR       2  //  Directory File
+#define EXT2_FT_CHRDEV    3  //  Character Device
+#define EXT2_FT_BLKDEV    4  //  Block Device
+#define EXT2_FT_FIFO      5  //  Buffer File
+#define EXT2_FT_SOCK      6  //  Socket File
+#define EXT2_FT_SYMLINK   7  //  Symbolic Link
+
 
 
 typedef unsigned int   __le32;

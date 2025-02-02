@@ -101,9 +101,14 @@ int findInodeByName(int fd, int base_inode_num, char* filename, int *filetype) {
     off_t offset;
     ssize_t bytes_read;
 
-    // Localiza a tabela de inodes no grupo de blocos
-    off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
-    off_t inode_offset = inode_table_offset + (base_inode_num - 1) * sizeof(struct ext2_inode);
+    // Passo 1: Encontrar o grupo de blocos do inode base
+    __u32 inodes_per_group = superblock->s_inodes_per_group;
+    int group_num = (base_inode_num - 1) / inodes_per_group;
+    struct ext2_group_desc *current_group = &blockgroup[group_num];
+
+    // Passo 2: Calcular o deslocamento do inode base
+    off_t inode_table_offset = BLOCK_OFFSET(current_group->bg_inode_table);
+    off_t inode_offset = inode_table_offset + ((base_inode_num - 1) % inodes_per_group) * superblock->s_inode_size;
 
     if (lseek(fd, inode_offset, SEEK_SET) == -1) {
         perror("[ERRO] Erro ao buscar inode");
@@ -304,23 +309,26 @@ void read_superblock(int fd) {
 
 
 void read_blockgroup(int fd) {
-    blockgroup = malloc(sizeof(struct ext2_group_desc));
+    int num_groups = (superblock->s_blocks_count - 1) / superblock->s_blocks_per_group + 1;
+    size_t group_desc_size = sizeof(struct ext2_group_desc) * num_groups;
+
+    blockgroup = malloc(group_desc_size);
     if (!blockgroup) {
-        perror("Erro ao alocar memória para grupo de blocos");
+        perror("Erro ao alocar memória para grupos de blocos");
         return;
     }
 
-    // O descritor do grupo de blocos começa logo após o superbloco
-    off_t blockgroup_offset = BASE_OFFSET + BLOCK_SIZE;
+    // O descritor dos grupos começa no bloco 2 se o tamanho do bloco for 1024
+    off_t blockgroup_offset = BASE_OFFSET + (BLOCK_SIZE << superblock->s_log_block_size);
     if (lseek(fd, blockgroup_offset, SEEK_SET) == -1) {
-        perror("Erro ao posicionar ponteiro no grupo de blocos");
+        perror("Erro ao posicionar ponteiro nos grupos de blocos");
         free(blockgroup);
         return;
     }
 
-    ssize_t bytes_read = read(fd, blockgroup, sizeof(struct ext2_group_desc));
-    if (bytes_read != sizeof(struct ext2_group_desc)) {
-        perror("Erro ao ler grupo de blocos");
+    ssize_t bytes_read = read(fd, blockgroup, group_desc_size);
+    if (bytes_read != group_desc_size) {
+        perror("Erro ao ler grupos de blocos");
         free(blockgroup);
         return;
     }
@@ -378,11 +386,14 @@ void ls(int fd, int base_inode_num) {
     off_t offset;
     ssize_t bytes_read;
 
-    // Localiza a tabela de inodes no grupo de blocos
-    off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
+    // Passo 1: Encontrar o grupo de blocos do inode atual
+    __u32 inodes_per_group = superblock->s_inodes_per_group;
+    int group_num = (base_inode_num - 1) / inodes_per_group;
+    struct ext2_group_desc *current_group = &blockgroup[group_num];
 
-    // Calcula o deslocamento do inode dentro da tabela
-    off_t inode_offset = inode_table_offset + (base_inode_num - 1) * sizeof(struct ext2_inode);
+    // Passo 2: Calcular o deslocamento da tabela de inodes do grupo correto
+    off_t inode_table_offset = BLOCK_OFFSET(current_group->bg_inode_table);
+    off_t inode_offset = inode_table_offset + ((base_inode_num - 1) % inodes_per_group) * superblock->s_inode_size;
 
     // Posiciona o ponteiro para o inode desejado
     if (lseek(fd, inode_offset, SEEK_SET) == -1) {
@@ -546,12 +557,99 @@ void sb() {
     printf("================================\n");
 }
 
+// Protótipo da função
+void findFile(int fd, int base_inode_num, const char *current_path) {
+    struct ext2_inode inode;
+    struct ext2_dir_entry entry;
+    off_t offset;
+    ssize_t bytes_read;
 
+    // Lê o inode do diretório atual
+    off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
+    off_t inode_offset = inode_table_offset + (base_inode_num - 1) * sizeof(struct ext2_inode);
+
+    if (lseek(fd, inode_offset, SEEK_SET) == -1) {
+        perror("[ERRO] Erro ao buscar inode");
+        return;
+    }
+
+    if (read(fd, &inode, sizeof(struct ext2_inode)) != sizeof(struct ext2_inode)) {
+        perror("[ERRO] Erro ao ler inode");
+        return;
+    }
+
+    // Percorre os blocos do diretório
+    for (int i = 0; i < EXT2_N_BLOCKS && inode.i_block[i]; i++) {
+        offset = BLOCK_OFFSET(inode.i_block[i]);
+
+        while (offset < BLOCK_OFFSET(inode.i_block[i]) + BLOCK_SIZE) {
+            if (lseek(fd, offset, SEEK_SET) == -1) {
+                perror("[ERRO] Erro ao buscar entrada do diretório");
+                return;
+            }
+
+            // Lê a entrada do diretório
+            bytes_read = read(fd, &entry, sizeof(struct ext2_dir_entry));
+            if (bytes_read <= 0) {
+                perror("[ERRO] Erro ao ler entrada de diretório");
+                return;
+            }
+
+            if (entry.inode == 0) {
+                offset += entry.rec_len;
+                continue;
+            }
+
+            // Lê o nome do arquivo/diretório
+            char name[EXT2_NAME_LEN + 1];
+            if (read(fd, name, entry.name_len) != entry.name_len) {
+                perror("[ERRO] Erro ao ler nome do arquivo");
+                return;
+            }
+            name[entry.name_len] = '\0';
+
+            // Ignora '.' e '..'
+            if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
+                // Monta o caminho completo
+                char new_path[1024];
+                snprintf(new_path, sizeof(new_path), "%s/%s", current_path, name);
+
+                // Exibe o caminho (adiciona '/' para diretórios)
+                if (entry.file_type == EXT2_FT_DIR) {
+                    printf("%s/\n", new_path);
+                } else {
+                    printf("%s\n", new_path);
+                }
+
+                // Se for diretório, busca recursivamente
+                if (entry.file_type == EXT2_FT_DIR) {
+                    struct ext2_inode subdir_inode;
+                    off_t subdir_inode_offset = inode_table_offset + (entry.inode - 1) * sizeof(struct ext2_inode);
+
+                    if (lseek(fd, subdir_inode_offset, SEEK_SET) == -1) {
+                        perror("[ERRO] Erro ao buscar inode do subdiretório");
+                        continue;
+                    }
+
+                    if (read(fd, &subdir_inode, sizeof(struct ext2_inode)) != sizeof(struct ext2_inode)) {
+                        perror("[ERRO] Erro ao ler inode do subdiretório");
+                        continue;
+                    }
+
+                    // Chama recursivamente para o subdiretório
+                    findFile(fd, entry.inode, new_path);
+                }
+            }
+
+            offset += entry.rec_len;
+        }
+    }
+}
 
 int extShell(int fd) {
     char cmd[10];  // Suporta comandos de até 9 letras + '\0'
     char filename[EXT2_NAME_LEN + 1];
-
+    char target[EXT2_NAME_LEN + 1];
     while (1) {
         printf("ext-shell$ ");
         scanf("%9s", cmd);  // Limita entrada a 9 caracteres para evitar buffer overflow
@@ -574,7 +672,10 @@ int extShell(int fd) {
             printf("Digite o nome do diretório: ");
             scanf("%255s", filename);
             cd(fd, current_directory_inode, filename);
-        }else {
+        } else if (!strcmp(cmd, "find")) {
+            printf("Listando todos os arquivos e diretórios a partir de:\n");
+            findFile(fd, current_directory_inode, ".");  // Inicia no diretório atual
+        } else {
             printf("Comando desconhecido: %s\n", cmd);
         }
     }

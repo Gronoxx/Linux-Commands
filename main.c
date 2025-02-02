@@ -430,3 +430,29 @@ int main(int argc, char **argv)
 	printf("\n\nQuitting ext-shell.\n\n");
 	return(0);
 }
+
+
+void read_inodeTable(int fd) {
+    size_t inode_table_size = superblock->s_inodes_per_group * superblock->s_inode_size;
+    inodes = malloc(inode_table_size);
+    if (!inodes) {
+        perror("Erro ao alocar memória para tabela de inodes");
+        return;
+    }
+
+    // O deslocamento correto é o início da tabela de inodes do grupo de blocos
+    off_t inode_table_offset = BLOCK_OFFSET(blockgroup->bg_inode_table);
+    if (lseek(fd, inode_table_offset, SEEK_SET) == -1) {
+        perror("Erro ao posicionar ponteiro na tabela de inodes");
+        free(inodes);
+        return;
+    }
+
+    ssize_t bytes_read = read(fd, inodes, inode_table_size);
+    if (bytes_read != inode_table_size) {
+        perror("Erro ao ler a tabela de inodes");
+        free(inodes);
+        return;
+    }
+
+}

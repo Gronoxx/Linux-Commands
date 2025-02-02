@@ -89,7 +89,7 @@ struct ext2_inode {
 			__u32	m_i_reserved2[2];
 		} masix2;
 	} osd2;				/* OS dependent 2 */
-};
+}__attribute__((packed));
 
 
 struct ext2_super_block {

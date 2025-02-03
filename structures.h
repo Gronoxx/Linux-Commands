@@ -4,7 +4,7 @@
 #define BLOCK_OFFSET(block) (BASE_OFFSET + (block - 1) * BLOCK_SIZE)
 #define EXT2_N_BLOCKS 15
 #define EXT2_NAME_LEN 255
-#define EXT2_ROOT_INODE 3
+#define EXT2_ROOT_INODE 2
 
 #define EXT2_FT_UNKNOWN   0  //  Unknown File Type
 #define EXT2_FT_REG_FILE  1  //  Regular File

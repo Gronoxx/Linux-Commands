@@ -10,10 +10,6 @@
   An interactive shell built from scratch in C to navigate and inspect an `ext2` file system image, demonstrating a deep understanding of low-level file system architecture and direct disk access.
 </p>
 
-<p align="center">
-  <img src="https://i.imgur.com/REPLACE_THIS_WITH_YOUR_GIF_URL.gif" alt="Project Demo GIF" width="800"/>
-</p>
-
 ## About The Project
 
 This project is an implementation of an interactive shell designed to manipulate and analyze `ext2` file system images, which are based on the Berkley Fast File System (FFS). The primary goal was to develop a toolset capable of navigating the internal structure of a disk image, allowing for operations like file listing, directory traversal, and metadata inspection by directly accessing disk blocks.
@@ -38,24 +34,27 @@ The shell provides a set of essential commands to explore the `ext2` image:
 
 ## Getting Started
 
-To get a local copy up and running, follow these simple steps.
+The shell is a single translation unit and needs no build system. It requires a **Linux**
+environment, since it uses the byte-order helpers from `<endian.h>`.
 
 1.  **Clone the repo**
     ```sh
     git clone https://github.com/Gronoxx/Linux-Commands.git
-    ```
-2.  **Navigate to the project directory**
-    ```sh
     cd Linux-Commands
     ```
-3.  **Compile the project** (A Makefile is usually required for C projects)
+2.  **Compile**
     ```sh
-    make
+    gcc -Wall -o ext-shell main.c
     ```
-4.  **Run the shell** with an `ext2` disk image
+3.  **Run against a filesystem image**
     ```sh
-    ./dcc-fsshell <path_to_your_filesystem_image.img>
+    ./ext-shell imagem.img
     ```
+
+Two ready-to-use `ext2` images ship with the repository: `imagem.img` (10 MB) and
+`imagem2.img` (1 MB). Once the shell starts, type `ls`, `cd`, `stat`, `find` or `sb`.
+
+The full write-up for the assignment is included as `Relatório SO TP3.pdf` (in Portuguese).
 
 ## My Contribution
 
